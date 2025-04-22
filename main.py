@@ -104,42 +104,48 @@ def enviar_pdf(payload: ManualPayload | None = None):
             email      = payload.email
             phone      = payload.phone
             full_name  = payload.full_name or ""
-            pacote     = payload.pacote or "Arquivo"
+            pacote     = payload.pacote or ""
         else:
             row   = notion_latest_row()
             props = row["properties"]
 
-            email      = props.get("Email", {}).get("email", "")
+            # E-mail
+            email = props.get("Email", {}).get("email", "")
 
+            # Telefone
             phone_rich = props.get("Telefone", {}).get("rich_text", [])
-            phone      = phone_rich[0].get("plain_text", "") if phone_rich else ""
+            phone = phone_rich[0].get("plain_text", "") if phone_rich else ""
 
+            # Nome completo
             title_rich = props.get("Cliente", {}).get("title", [])
-            full_name  = title_rich[0].get("plain_text", "") if title_rich else ""
+            full_name = title_rich[0].get("plain_text", "") if title_rich else ""
 
-            # CORRIGIDO: lê da propriedade "Pacote" (tipo SELECT)
-            pacote_field = props.get("Pacote", {}).get("select", {})
-            pacote       = pacote_field.get("name", "Arquivo")
+            # Pacote (tipo select)
+            pacote_select = props.get("Pacote", {}).get("select")
+            if pacote_select and isinstance(pacote_select, dict):
+                pacote = pacote_select.get("name", "")
+            else:
+                raise ValueError("Campo 'Pacote' não encontrado ou está vazio no Notion")
 
-        # Validação
+        # Validação de campos obrigatórios
         if not all([email, phone, full_name, pacote]):
             raise ValueError("Campos obrigatórios faltando (email, phone, nome ou pacote)")
 
-        # Valida pacote
+        # Buscar link no dicionário
         pdf_url = PACKAGE_FILE_MAPPING.get(pacote)
         if not pdf_url:
-            raise ValueError(f"Link do pacote '{pacote}' não encontrado")
+            raise ValueError(f"Link do pacote '{pacote}' não encontrado no mapping")
 
-        # Baixa PDF e monta mensagem
+        # Baixar PDF e montar mensagem
         pdf_bytes = download_pdf(pdf_url)
-        filename  = f"{pacote}.pdf"
-        first     = full_name.split()[0]
-        caption   = f"Oi {first}, aqui está o PDF do seu investimento. Qualquer dúvida, me avise!"
+        filename = f"{pacote}.pdf"
+        first = full_name.split()[0]
+        caption = f"Oi {first}, aqui está o PDF do seu investimento. Qualquer dúvida, me avise!"
 
-        # Envia por WhatsApp
+        # Enviar via WhatsApp
         send_whatsapp(phone, caption, pdf_bytes, filename)
 
-        # Envia por E-mail
+        # Enviar via E-mail
         html_body = (
             f"<p>Olá {first},</p>"
             f"<p>Segue em anexo o PDF do pacote <strong>{pacote}</strong>.</p>"
@@ -150,7 +156,7 @@ def enviar_pdf(payload: ManualPayload | None = None):
 
     except Exception as e:
         import traceback
-        traceback.print_exc()  # Mostra erro nos logs Render
+        traceback.print_exc()
         raise HTTPException(
             status_code=500,
             detail=str(e)
