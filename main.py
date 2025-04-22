@@ -104,39 +104,57 @@ def enviar_pdf(payload: ManualPayload | None = None):
             email      = payload.email
             phone      = payload.phone
             full_name  = payload.full_name or ""
-            pacote     = payload.pacote   or "Arquivo"
+            pacote     = payload.pacote or "Arquivo"
         else:
-            row        = notion_latest_row()
-            props      = row["properties"]
+            row   = notion_latest_row()
+            props = row["properties"]
+
             email      = props.get("Email", {}).get("email", "")
+
             phone_rich = props.get("Telefone", {}).get("rich_text", [])
             phone      = phone_rich[0].get("plain_text", "") if phone_rich else ""
+
             title_rich = props.get("Cliente", {}).get("title", [])
             full_name  = title_rich[0].get("plain_text", "") if title_rich else ""
-            pacote_mv  = props.get("Pacote escolhido", {}).get("multi_select", [])
-            pacote     = pacote_mv[0].get("name", "Arquivo") if pacote_mv else "Arquivo"
 
+            # CORRIGIDO: lê da propriedade "Pacote" (tipo SELECT)
+            pacote_field = props.get("Pacote", {}).get("select", {})
+            pacote       = pacote_field.get("name", "Arquivo")
+
+        # Validação
         if not all([email, phone, full_name, pacote]):
-            raise ValueError("Campos obrigatórios faltando")
+            raise ValueError("Campos obrigatórios faltando (email, phone, nome ou pacote)")
 
-        pdf_url   = PACKAGE_FILE_MAPPING.get(pacote)
+        # Valida pacote
+        pdf_url = PACKAGE_FILE_MAPPING.get(pacote)
         if not pdf_url:
             raise ValueError(f"Link do pacote '{pacote}' não encontrado")
 
+        # Baixa PDF e monta mensagem
         pdf_bytes = download_pdf(pdf_url)
         filename  = f"{pacote}.pdf"
         first     = full_name.split()[0]
         caption   = f"Oi {first}, aqui está o PDF do seu investimento. Qualquer dúvida, me avise!"
 
-        # WhatsApp + E‑mail
+        # Envia por WhatsApp
         send_whatsapp(phone, caption, pdf_bytes, filename)
-        html_body = f"<p>Olá {first},</p><p>Segue em anexo o PDF do pacote <strong>{pacote}</strong>.</p>"
+
+        # Envia por E-mail
+        html_body = (
+            f"<p>Olá {first},</p>"
+            f"<p>Segue em anexo o PDF do pacote <strong>{pacote}</strong>.</p>"
+        )
         send_email(email, "Seu arquivo solicitado", html_body, pdf_bytes, filename)
 
         return JSONResponse({"status": "sucesso"})
+
     except Exception as e:
-        # log real em produção
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        traceback.print_exc()  # Mostra erro nos logs Render
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        ) from e
 
 @app.get("/health")
 def health():
