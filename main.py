@@ -37,10 +37,28 @@ def notion_latest_row() -> dict:
         "Notion-Version": "2022-06-28",
         "Content-Type":  "application/json",
     }
-    r = requests.post(url, headers=headers, timeout=15)
+
+    payload = {
+        "filter": {
+            "property": "Pacote",
+            "select": {
+                "is_not_empty": True
+            }
+        },
+        "sorts": [
+            {
+                "timestamp": "created_time",
+                "direction": "descending"
+            }
+        ],
+        "page_size": 1
+    }
+
+    r = requests.post(url, headers=headers, json=payload, timeout=15)
     if r.ok and r.json().get("results"):
         return r.json()["results"][0]
     raise RuntimeError(f"Notion query failed → {r.status_code} {r.text}")
+
 
 def download_pdf(url: str) -> bytes:
     r = requests.get(url, timeout=60)
